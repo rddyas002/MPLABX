@@ -4,6 +4,7 @@
 #include "../inc/ultrasonic.h"
 #include "../inc/rn131.h"
 #include "../inc/imu.h"
+#include "../inc/ds18s20.h"
 
 /*
  * Describe interrupts:
@@ -234,8 +235,8 @@ void IO_setup(void){
     // Setup CT interrupt
     IO_setupTICK();
 
-    // Setup ADC for temperature read
-    IO_setupADC();
+//    // Setup ADC for temperature read
+//    IO_setupADC();
 }
 
 void IO_getConfiguration(void){
@@ -2043,11 +2044,17 @@ void __ISR(_CORE_TIMER_VECTOR, IO_CT_IPL) CoreTimerHandler(void){
         CDCTxService();
     #endif
 
-    // Initiate ADC read
-    if ((IO_time_ms % IO_ADC_READ) == 0){
-	AD1CON1bits.CLRASAM = 1;
-	AD1CON1bits.ASAM = 1;
+//    // Initiate ADC read
+//    if ((IO_time_ms % IO_ADC_READ) == 0){
+//	AD1CON1bits.CLRASAM = 1;
+//	AD1CON1bits.ASAM = 1;
+//    }
+
+    // Start temperature conversion
+    if ((IO_time_ms % DS18S20_TS) == 0){
+        DS18S20_setStartConversion(true);
     }
+    DS18S20_convTickInc();
 
     if (IO_SystemPreviousState != IO_SystemState)
         heartbeat_count = 0;

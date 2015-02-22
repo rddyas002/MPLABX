@@ -1,11 +1,18 @@
 #define DS18S20_H_IMPORT
 #include "ds18s20.h"
 
-unsigned char sensor_id[5][8] = {{0x31,0x00,0x00,0x00,0xB2,0x5B,0xA0,0x28},
+unsigned char DS18S20_sensor_id[5][8] = {{0x31,0x00,0x00,0x00,0xB2,0x5B,0xA0,0x28},
                                  {0xCE,0x00,0x00,0x00,0xB2,0x58,0x30,0x28},
                                  {0x0B,0x00,0x00,0x00,0xB2,0x0A,0xC8,0x28},
                                  {0x2F,0x00,0x00,0x00,0xB1,0xE2,0xD6,0x28},
                                  {0xE7,0x00,0x00,0x00,0xB1,0xDD,0x69,0x28}};
+unsigned char DS18S20_scratch_pad[DS18S20_NUMDEVICES][9] = {0};
+unsigned char temperature_array[10] = {0};
+
+bool DS18S20_conversionStarted = false;
+unsigned short int DS18S20_convTick = 0;
+bool DS18S20_startConversion = false;
+bool DS18S20updated = false;
 
 void DS18S20_setup(void){
     // Set UART IO direction
@@ -13,27 +20,8 @@ void DS18S20_setup(void){
     DS18S20_UART_PIN_TX = 0;
 
     DS18S20_reset();
-//    //DS18S20_configureUART(9600);
-//    IO_delayms(100);
-//    DS18S20_startConversionAll();
-//    unsigned temp_u = DS18S20_getTemp(&sensor_id[0][0]);
-
-    int num_devices = DS1820_FindDevices();
-//    IO_delayms(10);
-    DS1820_WriteEEPROM(&sensor_id[0][0], 0xaa, 0xbb);
-    char pad[9] = {0};
-    int i = 0;
-    unsigned short int temp_uint16[5] = {0};
-    while(1){
-        DS18S20_startConversionAll();
-        // Wait 750ms
-        IO_delayms(750);
-        for (i = 0; i < 5; i++){
-            DS18S20_readScratchPad(&sensor_id[i][0], &pad[0]);
-            IO_delayms(10);
-        }
-        IO_delayms(100);
-    }
+    // configure for 10 bits resolution, and min/max alarm values
+    //DS18S20_setResolution(DS18S20_NUMDEVICES);
 }
 
 void DS18S20_configureUART(unsigned int baud_rate){
@@ -42,6 +30,57 @@ void DS18S20_configureUART(unsigned int baud_rate){
     UARTSetLineControl(DS18S20_UART, UART_DATA_SIZE_8_BITS | UART_PARITY_NONE | UART_STOP_BITS_1);
     UARTSetDataRate(DS18S20_UART, GetPeripheralClock(), baud_rate);
     UARTEnable(DS18S20_UART, UART_ENABLE_FLAGS(UART_PERIPHERAL | UART_RX | UART_TX));
+}
+
+unsigned short int DS18S20_convTickInc(void){
+    if (DS18S20_conversionStarted)
+        DS18S20_convTick++;
+    return DS18S20_convTick;
+}
+
+unsigned short int DS18S20_msCount(void){
+    return DS18S20_convTick;
+}
+
+void DS18S20_setStartConversion(bool val){
+    DS18S20_startConversion = val;
+}
+
+bool DS18S20_getStartConversion(void){
+    return DS18S20_startConversion;
+}
+
+char * DS18S20_getTemperatureArray(void){
+    return &temperature_array[0];
+}
+
+void DS18S20_queryComplete(void){
+    int i, j;
+    // if time expired, retrieve data
+    if (DS18S20_msCount() > DS18S20_CONV_TIME){
+        
+        // clear conversion ticker
+        DS18S20_convTick = 0;
+        // conversion should be complete
+        DS18S20_conversionStarted = false;
+        j = 0;
+        for (i = 0; i < DS18S20_NUMDEVICES; i++){
+            IO_DEBUG_LAT_HIGH();
+            DS18S20_readScratchPad(&DS18S20_sensor_id[i][0], &DS18S20_scratch_pad[i][0]);
+            temperature_array[j++] = DS18S20_scratch_pad[i][0];
+            temperature_array[j++] = DS18S20_scratch_pad[i][1];
+            IO_DEBUG_LAT_LOW();
+        }
+        DS18S20updated = true;
+    }
+}
+
+bool DS18S20_updated(void){
+    return DS18S20updated;
+}
+
+void DS18S20_updatedClear(void){
+    DS18S20updated = false;
 }
 
 bool DS18S20_reset(void){
@@ -57,6 +96,15 @@ bool DS18S20_reset(void){
     else{
         DS18S20_configureUART(115600);
         return true;
+    }
+}
+
+void DS18S20_setResolution(int devices){
+    int i;
+    char scratch_pad[9] = {0};
+    for (i = 0; i < devices; i++){
+        DS1820_WriteEEPROM(&DS18S20_sensor_id[i][0], 0x7F, 0xFF, 0x3F);
+        DS18S20_readScratchPad(&DS18S20_sensor_id[i][0], &scratch_pad[0]);
     }
 }
 
@@ -101,35 +149,20 @@ UINT8 DS18S20_bit(UINT8 data_bit){
     return (returned_bit == (UINT8)0xFF ? (UINT8)1 : (UINT8)0);
 }
 
-void DS18S20_writeBit(UINT8 data_bit){
-    data_bit = data_bit ? (char)0xFF : 0x00;
-    WriteUART1(data_bit);
-    // wait until data in buffer
-    while(!U1ASTAbits.URXDA);
-    // read until buffer clear
-    char temp;
-    while(U1ASTAbits.URXDA){
-        temp = ReadUART1();
-    }
-}
-
-char DS18S20_readBit(void){
-    WriteUART1(0xFF);
-    // wait until data in buffer
-    while(!U1ASTAbits.URXDA);
-    // read until buffer clear
-    return (ReadUART1() == (char)0xFF ? 1 : 0);
-}
-
 bool DS18S20_startConversionAll(void){
-    // Reset the 1-Wire bus
-    if(!DS18S20_reset())
+    if (!DS18S20_conversionStarted){
+        DS18S20_conversionStarted = true;
+        // Reset the 1-Wire bus
+        if(!DS18S20_reset())
+            return false;
+        // Skip ROM command (0xCC) to select all devices on the bus
+        DS18S20_writeByte(0xCC);
+        // Convert command (0x44) to tell all DS18B20s to get the temperature
+        DS18S20_writeByte(0x44);
+        return true;
+    }
+    else
         return false;
-    // Skip ROM command (0xCC) to select all devices on the bus
-    DS18S20_writeByte(0xCC);
-    // Convert command (0x44) to tell all DS18B20s to get the temperature
-    DS18S20_writeByte(0x44);
-    return true;
 }
 
 void DS18S20_readScratchPad(char ROM_code[], char scratch_pad[]){
@@ -146,25 +179,10 @@ void DS18S20_readScratchPad(char ROM_code[], char scratch_pad[]){
     DS1820_readBytes(scratch_pad, 9);
 }
 
-//unsigned short int DS18S20_getTemp(int sensor){
-//    char scratch_pad[9] = {0};
-//    unsigned short int temp_celsius = 0;
-//    int i;
-//
-//    DS18S20_reset();
-//    DS18S20_writeByte(0x55);
-//    for (i = 7 ; i >= 0; i--){
-//        DS18S20_writeByte(sensor_id[sensor][i]);
-//    }
-//    // Send READ SCRATCHPAD command (0xBE) to get temperature
-//    DS18S20_writeByte(0xBE);
-//    // Read 9 bytes from scratch pad
-//    DS1820_readBytes(scratch_pad, 9);
-//    DS18S20_reset();
-//    // Calculate the temperature from LSB and MSB
-//    temp_celsius = (unsigned short int)(((unsigned short int)scratch_pad[1] << 8) | scratch_pad[0]);
-//    return temp_celsius;
-//}
+float DS1820_getTemp(char scratch_pad[]){
+    unsigned short int temp = (unsigned short int)((unsigned short int)scratch_pad[1] << 8) | scratch_pad[0];
+    return (float)temp/16;
+}
 
 void DS1820_readBytes(char buffer[], int bytes){
     int i;
@@ -306,7 +324,7 @@ int DS1820_FindDevices(void){
     return (device_num - 1);
 }
 
-void DS1820_WriteEEPROM(char ROM_code[], unsigned char nTHigh, unsigned char nTLow){
+void DS1820_WriteEEPROM(char ROM_code[], unsigned char nTHigh, unsigned char nTLow, unsigned char config){
     int i;
     DS18S20_reset();
     DS18S20_writeByte(DS1820_CMD_MATCHROM);
@@ -316,6 +334,7 @@ void DS1820_WriteEEPROM(char ROM_code[], unsigned char nTHigh, unsigned char nTL
     DS18S20_writeByte(DS1820_CMD_WRITESCRPAD); /* start conversion */
     DS18S20_writeByte(nTHigh);
     DS18S20_writeByte(nTLow);
+    DS18S20_writeByte(config);
 
     IO_delayms(1);
 

@@ -37,6 +37,10 @@
 #define DS1820_CMD_COPYSCRPAD    0x48
 #define DS1820_CMD_RECALLEE      0xB8
 
+#define DS18S20_TS               500    // every 0.5 second
+#define DS18S20_CONV_TIME        200    // 200ms for conversion to take place
+#define DS18S20_NUMDEVICES       5
+
 DS18S20_EXTERN void DS18S20_setup(void);
 DS18S20_EXTERN bool DS18S20_reset(void);
 DS18S20_EXTERN UINT8 DS18S20_bit(UINT8 data_bit);
@@ -48,9 +52,15 @@ DS18S20_EXTERN bool DS1820_FindNextDevice(int device_num);
 DS18S20_EXTERN int DS1820_FindDevices(void);
 DS18S20_EXTERN bool DS18S20_startConversionAll(void);
 DS18S20_EXTERN void DS1820_readBytes(char buffer[], int bytes);
-DS18S20_EXTERN void DS1820_WriteEEPROM(char ROM_code[], unsigned char nTHigh, unsigned char nTLow);
-DS18S20_EXTERN void DS18S20_writeBit(UINT8 data_bit);
-DS18S20_EXTERN char DS18S20_readBit(void);
+DS18S20_EXTERN void DS1820_WriteEEPROM(char ROM_code[], unsigned char nTHigh, unsigned char nTLow, unsigned char config);
+DS18S20_EXTERN float DS1820_getTemp(char scratch_pad[]);
+DS18S20_EXTERN void DS18S20_setResolution(int devices);
+DS18S20_EXTERN unsigned short int DS18S20_convTickInc(void);
+DS18S20_EXTERN bool DS18S20_getStartConversion(void);
+DS18S20_EXTERN void DS18S20_setStartConversion(bool val);
+DS18S20_EXTERN char * DS18S20_getTemperatureArray(void);
+DS18S20_EXTERN bool DS18S20_updated(void);
+DS18S20_EXTERN void DS18S20_updatedClear(void);
 
 #endif	/* DS18S20_H */
 

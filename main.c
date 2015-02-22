@@ -79,20 +79,15 @@ int main(int argc, char** argv) {
     while(1){        
         if(USB_BUS_SENSE && (USBGetDeviceState() == DETACHED_STATE)){
             USBDeviceAttach();
-        }            
-        //ProcessIO(&count);
+        }
+        if (DS18S20_getStartConversion()){
+            DS18S20_setStartConversion(false);
+            IO_DEBUG_LAT_HIGH();
+            DS18S20_startConversionAll();
+            IO_DEBUG_LAT_LOW();
+        }
+        DS18S20_queryComplete();
         
-        // If user button is pressed, make dc 75%
-//        if (!PORTReadBits(IOPORT_E, BIT_6)){
-//            if (step_on_state){
-//                step_on_state = false;
-//                duty_cycle = 0.0;
-//            }
-//            else{
-//                step_on_state = true;
-//                duty_cycle = 50.0;
-//            }
-//        }
         if ((system_state & 0x03) == 0b01){
             duty_cycle = 50.0;
         }
@@ -125,18 +120,19 @@ int main(int argc, char** argv) {
                         memcpy(&wp_temp, &buffer_in[14], 4);
                     }
                 }
-                if(ADC_updated()){
+                if(DS18S20_updated()){
                     memcpy(&buffer_out[0], &duty_cycle, 4);
-                    temp = (unsigned int)IO_getBatteryVoltage();
-                    memcpy(&buffer_out[4], &temp, 4);
                     temp = (unsigned int)IO_get_time_ms();
-                    memcpy(&buffer_out[8], &temp, 4);
-                    buffer_out[12] = reference_temperature;
-                    buffer_out[13] = system_state;
-                    checksum = IO_getChecksum(&buffer_out[0], 14);
-                    buffer_out[14] = checksum;
-                    putUSBUSART(&buffer_out[0], 15);
-                    ADC_update_clear();
+                    memcpy(&buffer_out[4], &temp, 4);
+                    buffer_out[8] = reference_temperature;
+                    buffer_out[9] = system_state;
+                    memcpy(&buffer_out[10], DS18S20_getTemperatureArray(), 10);
+                    checksum = IO_getChecksum(&buffer_out[0], 20);
+                    buffer_out[20] = checksum;
+                    putUSBUSART(&buffer_out[0], 21);
+
+                    DS18S20_updatedClear();
+                    
                     float measured_temp = (float)IO_getBatteryVoltage()*100*3.3/1023;
                     closed_loop_duty_cycle = IO_temperature_control((float) reference_temperature,
                         measured_temp, 0, 100, 50e-3, false, Kp_temp, wi_temp, wz_temp, wp_temp);
